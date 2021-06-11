@@ -2,6 +2,7 @@
 Changelog
 =========
 
+* :feature:`2064` Users will now be able to close rotki to tray. When logged the tray icon will update based on the net worth value during the selected period (week, two weeks etc).
 * :feature:`1800` Users will now be greeted with an informational notice when trying to access a page that requires a module to be activated.
 * :feature:`1692` IndependentReserve users will now be able to see their balances and have their deposit/withdrawal/trade history taken into account during profit/loss calculation.
 * :feature:`3025` Users will now see the percentage of each location when looking into an asset's details.
