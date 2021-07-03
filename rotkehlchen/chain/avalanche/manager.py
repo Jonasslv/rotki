@@ -35,7 +35,7 @@ from rotkehlchen.errors import (
     RemoteError,
     UnableToDecryptRemoteData,
 )
-from rotkehlchen.externalapis.etherscan import Etherscan
+from rotkehlchen.externalapis.covalent import Covalent
 from rotkehlchen.fval import FVal
 from rotkehlchen.greenlets import GreenletManager
 from rotkehlchen.logging import RotkehlchenLogsAdapter
@@ -154,49 +154,11 @@ def _query_web3_get_logs(
 
     return events
 
-
-# TODO: Ideally all these should become configurable
-# Taking LINKPOOL out since it's just really too slow and seems to not
-# respond to the batched calls almost at all. Combined with web3.py retries
-# this makes the tokens balance queries super slow.
-OPEN_NODES = (
-    NodeName.MYCRYPTO,
-    NodeName.BLOCKSCOUT,
-    NodeName.AVADO_POOL,
-    NodeName.ONEINCH,
-    NodeName.MYETHERWALLET,
-    # NodeName.LINKPOOL,
-    NodeName.CLOUDFLARE_ETH,
-    NodeName.ETHERSCAN,
-)
-ETHEREUM_NODES_TO_CONNECT_AT_START = (
-    NodeName.OWN,
-    NodeName.MYCRYPTO,
-    NodeName.BLOCKSCOUT,
-    NodeName.ONEINCH,
-    NodeName.AVADO_POOL,
-    NodeName.ONEINCH,
-    NodeName.MYETHERWALLET,
-    # NodeName.LINKPOOL,
-    NodeName.CLOUDFLARE_ETH,
-)
-OPEN_NODES_WEIGHT_MAP = {  # Probability with which to select each node
-    NodeName.ETHERSCAN: 0.3,
-    NodeName.MYCRYPTO: 0.15,
-    NodeName.BLOCKSCOUT: 0.1,
-    NodeName.AVADO_POOL: 0.05,
-    NodeName.ONEINCH: 0.15,
-    NodeName.MYETHERWALLET: 0.15,
-    # NodeName.LINKPOOL: 0.05,
-    NodeName.CLOUDFLARE_ETH: 0.1,
-}
-
-
 class EthereumManager():
     def __init__(
             self,
             ethrpc_endpoint: str,
-            etherscan: Etherscan,
+            covalent: Covalent,
             database: DBHandler,
             msg_aggregator: MessagesAggregator,
             greenlet_manager: GreenletManager,
@@ -207,7 +169,7 @@ class EthereumManager():
         self.greenlet_manager = greenlet_manager
         self.web3_mapping: Dict[NodeName, Web3] = {}
         self.own_rpc_endpoint = ethrpc_endpoint
-        self.etherscan = etherscan
+        self.covalent = covalent
         self.msg_aggregator = msg_aggregator
         self.eth_rpc_timeout = eth_rpc_timeout
         self.transactions = EthTransactions(
@@ -530,8 +492,6 @@ class EthereumManager():
         - RemoteError if Etherscan is used and there is a problem querying it or
         parsing its response
         """
-        if web3 is None:
-            return self.etherscan.get_code(account)
 
         return hex_or_bytes_to_str(web3.eth.getCode(account))
 
@@ -660,44 +620,6 @@ class EthereumManager():
             log.error(f'Error deserializing address {address}')
             return None
 
-    def _call_contract_etherscan(
-            self,
-            contract_address: ChecksumEthAddress,
-            abi: List,
-            method_name: str,
-            arguments: Optional[List[Any]] = None,
-    ) -> Any:
-        """Performs an eth_call to an ethereum contract via etherscan
-
-        May raise:
-        - RemoteError if there is a problem with
-        reaching etherscan or with the returned result
-        """
-        web3 = Web3()
-        contract = web3.eth.contract(address=contract_address, abi=abi)
-        input_data = contract.encodeABI(method_name, args=arguments if arguments else [])
-        result = self.etherscan.eth_call(
-            to_address=contract_address,
-            input_data=input_data,
-        )
-        if result == '0x':
-            raise BlockchainQueryError(
-                f'Error doing call on contract {contract_address} for {method_name} '
-                f'with arguments: {str(arguments)} via etherscan. Returned 0x result',
-            )
-
-        fn_abi = contract._find_matching_fn_abi(
-            fn_identifier=method_name,
-            args=arguments,
-        )
-        output_types = get_abi_output_types(fn_abi)
-        output_data = web3.codec.decode_abi(output_types, bytes.fromhex(result[2:]))
-
-        if len(output_data) == 1:
-            # due to https://github.com/PyCQA/pylint/issues/4114
-            return output_data[0]  # pylint: disable=unsubscriptable-object
-        return output_data
-
     def _get_transaction_receipt(
             self,
             web3: Optional[Web3],
@@ -773,13 +695,6 @@ class EthereumManager():
         reaching it or with the returned result
         - BlockchainQueryError if web3 is used and there is a VM execution error
         """
-        if web3 is None:
-            return self._call_contract_etherscan(
-                contract_address=contract_address,
-                abi=abi,
-                method_name=method_name,
-                arguments=arguments,
-            )
 
         contract = web3.eth.contract(address=contract_address, abi=abi)
         try:
@@ -843,7 +758,6 @@ class EthereumManager():
             # web3.py does not handle the anonymous events correctly and adds the first topic
             filter_args['topics'] = filter_args['topics'][1:]
         events: List[Dict[str, Any]] = []
-        start_block = from_block
         if web3 is not None:
             events = _query_web3_get_logs(
                 web3=web3,
@@ -854,93 +768,6 @@ class EthereumManager():
                 event_name=event_name,
                 argument_filters=argument_filters,
             )
-        else:  # etherscan
-            until_block = (
-                self.etherscan.get_latest_block_number() if to_block == 'latest' else to_block
-            )
-            blocks_step = 300000
-            while start_block <= until_block:
-                while True:  # loop to continuously reduce block range if need b
-                    end_block = min(start_block + blocks_step, until_block)
-                    try:
-                        new_events = self.etherscan.get_logs(
-                            contract_address=contract_address,
-                            topics=filter_args['topics'],  # type: ignore
-                            from_block=start_block,
-                            to_block=end_block,
-                        )
-                    except RemoteError as e:
-                        if 'Please select a smaller result dataset' in str(e):
-
-                            blocks_step = blocks_step // 2
-                            if blocks_step < 100:
-                                raise  # stop trying
-                            # else try with the smaller step
-                            continue
-
-                        # else some other error
-                        raise
-
-                    break  # we must have a result
-
-                # Turn all Hex ints to ints
-                for e_idx, event in enumerate(new_events):
-                    try:
-                        block_number = deserialize_int_from_hex(
-                            symbol=event['blockNumber'],
-                            location='etherscan log query',
-                        )
-                        log_index = deserialize_int_from_hex(
-                            symbol=event['logIndex'],
-                            location='etherscan log query',
-                        )
-                        # Try to see if the event is a duplicate that got returned
-                        # in the previous iteration
-                        for previous_event in reversed(events):
-                            if previous_event['blockNumber'] < block_number:
-                                break
-
-                            same_event = (
-                                previous_event['logIndex'] == log_index and
-                                previous_event['transactionHash'] == event['transactionHash']
-                            )
-                            if same_event:
-                                events.pop()
-
-                        new_events[e_idx]['address'] = deserialize_ethereum_address(
-                            event['address'],
-                        )
-                        new_events[e_idx]['blockNumber'] = block_number
-                        new_events[e_idx]['timeStamp'] = deserialize_int_from_hex(
-                            symbol=event['timeStamp'],
-                            location='etherscan log query',
-                        )
-                        new_events[e_idx]['gasPrice'] = deserialize_int_from_hex(
-                            symbol=event['gasPrice'],
-                            location='etherscan log query',
-                        )
-                        new_events[e_idx]['gasUsed'] = deserialize_int_from_hex(
-                            symbol=event['gasUsed'],
-                            location='etherscan log query',
-                        )
-                        new_events[e_idx]['logIndex'] = log_index
-                        new_events[e_idx]['transactionIndex'] = deserialize_int_from_hex(
-                            symbol=event['transactionIndex'],
-                            location='etherscan log query',
-                        )
-                    except DeserializationError as e:
-                        raise RemoteError(
-                            'Couldnt decode an etherscan event due to {str(e)}}',
-                        ) from e
-
-                # etherscan will only return 1000 events in one go. If more than 1000
-                # are returned such as when no filter args are provided then continue
-                # the query from the last block
-                if len(new_events) == 1000:
-                    start_block = new_events[-1]['blockNumber']
-                else:
-                    start_block = end_block + 1
-                events.extend(new_events)
 
         return events
 
@@ -964,44 +791,6 @@ class EthereumManager():
         block_number = event['blockNumber']
         block_data = self.get_block_by_number(block_number)
         return Timestamp(block_data['timestamp'])
-
-    def _get_blocknumber_by_time_from_subgraph(self, ts: Timestamp) -> int:
-        """Queries Ethereum Blocks Subgraph for closest block at or before given timestamp"""
-        response = self.blocks_subgraph.query(
-            f"""
-            {{
-                blocks(
-                    first: 1, orderBy: timestamp, orderDirection: desc,
-                    where: {{timestamp_lte: "{ts}"}}
-                ) {{
-                    id
-                    number
-                    timestamp
-                }}
-            }}
-            """,
-        )
-        try:
-            result = int(response['blocks'][0]['number'])
-        except (IndexError, KeyError) as e:
-            raise RemoteError(
-                f'Got unexpected ethereum blocks subgraph response: {response}',
-            ) from e
-        else:
-            return result
-
-    def get_blocknumber_by_time(self, ts: Timestamp, etherscan: bool = True) -> int:
-        """Searches for the blocknumber of a specific timestamp
-        - Performs the etherscan api call by default first
-        - If RemoteError raised or etherscan flag set to false
-            -> queries blocks subgraph
-        """
-        if etherscan:
-            try:
-                return self.etherscan.get_blocknumber_by_time(ts)
-            except RemoteError:
-                pass
-        return self._get_blocknumber_by_time_from_subgraph(ts)
 
     def get_basic_contract_info(self, address: ChecksumEthAddress) -> Dict[str, Any]:
         """

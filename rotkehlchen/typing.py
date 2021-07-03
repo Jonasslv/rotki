@@ -79,7 +79,8 @@ class ExternalService(Enum):
     CRYPTOCOMPARE = 1
     BEACONCHAIN = 2
     LOOPRING = 3
-
+    COVALENT = 4
+    
     @staticmethod
     def serialize(name: str) -> Optional['ExternalService']:
         if name == 'etherscan':
@@ -90,6 +91,8 @@ class ExternalService(Enum):
             return ExternalService.BEACONCHAIN
         if name == 'loopring':
             return ExternalService.LOOPRING
+        if name == 'covalent':
+            return ExternalService.COVALENT
         # else
         return None
 
