@@ -31,6 +31,7 @@ from rotkehlchen.chain.ethereum.manager import (
     EthereumManager,
     NodeName,
 )
+from rotkehlchen.chain.avalanche.manager import AvalancheManager
 from rotkehlchen.chain.ethereum.trades import AMMTRADE_LOCATION_NAMES, AMMTrade, AMMTradeLocations
 from rotkehlchen.chain.manager import BlockchainBalancesUpdate, ChainManager
 from rotkehlchen.chain.substrate.manager import SubstrateManager
@@ -55,6 +56,7 @@ from rotkehlchen.externalapis.beaconchain import BeaconChain
 from rotkehlchen.externalapis.coingecko import Coingecko
 from rotkehlchen.externalapis.cryptocompare import Cryptocompare
 from rotkehlchen.externalapis.etherscan import Etherscan
+from rotkehlchen.externalapis.covalent import Covalent
 from rotkehlchen.fval import FVal
 from rotkehlchen.globaldb import GlobalDBHandler
 from rotkehlchen.globaldb.updates import AssetsUpdater
@@ -235,6 +237,7 @@ class Rotkehlchen():
             should_submit=settings.submit_usage_analytics,
         )
         self.etherscan = Etherscan(database=self.data.db, msg_aggregator=self.msg_aggregator)
+        self.covalent = Covalent(database=self.data.db, msg_aggregator=self.msg_aggregator)
         self.beaconchain = BeaconChain(database=self.data.db, msg_aggregator=self.msg_aggregator)
         eth_rpc_endpoint = settings.eth_rpc_endpoint
         # Initialize the price historian singleton
@@ -276,7 +279,13 @@ class Rotkehlchen():
             connect_on_startup=self._connect_ksm_manager_on_startup(),
             own_rpc_endpoint=settings.ksm_rpc_endpoint,
         )
-
+        avalanche_manager = AvalancheManager(
+            avaxrpc_endpoint = "https://api.avax.network/ext/bc/C/rpc",
+            covalent=self.covalent,
+            database=self.data.db,
+            msg_aggregator=self.msg_aggregator,
+        )
+        
         Inquirer().inject_ethereum(ethereum_manager)
         Inquirer().set_oracles_order(settings.current_price_oracles)
 
@@ -284,6 +293,7 @@ class Rotkehlchen():
             blockchain_accounts=self.data.db.get_blockchain_accounts(),
             ethereum_manager=ethereum_manager,
             kusama_manager=kusama_manager,
+            avalanche_manager=avalanche_manager,
             msg_aggregator=self.msg_aggregator,
             database=self.data.db,
             greenlet_manager=self.greenlet_manager,

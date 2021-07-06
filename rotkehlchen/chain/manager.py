@@ -86,6 +86,7 @@ from rotkehlchen.utils.mixins.lockable import LockableQueryMixIn, protect_with_l
 
 if TYPE_CHECKING:
     from rotkehlchen.chain.ethereum.manager import EthereumManager
+    from rotkehlchen.chain.avalanche.manager import AvalancheManager
     from rotkehlchen.chain.ethereum.typing import Eth2Deposit, ValidatorDetails
     from rotkehlchen.chain.substrate.manager import SubstrateManager
     from rotkehlchen.db.dbhandler import DBHandler
@@ -163,6 +164,7 @@ class BlockchainBalances:
         self.eth = defaultdict(BalanceSheet)
         self.btc = defaultdict(Balance)
         self.ksm = defaultdict(BalanceSheet)
+        self.avax = defaultdict(BalanceSheet)
 
     def serialize(self) -> Dict[str, Dict]:
         eth_balances = {k: v.serialize() for k, v in self.eth.items()}
@@ -217,6 +219,8 @@ class BlockchainBalances:
             return self.btc != {}
         if blockchain == SupportedBlockchain.KUSAMA:
             return self.ksm != {}
+        if blockchain == SupportedBlockchain.AVALANCHE:
+            return self.avax != {}
         # else
         raise AssertionError('Invalid blockchain value')
 
@@ -231,6 +235,8 @@ class BlockchainBalances:
             return account in self.btc
         if blockchain == SupportedBlockchain.KUSAMA:
             return account in self.ksm
+        if blockchain == SupportedBlockchain.AVALANCHE:
+            return account in self.avax
         # else
         raise AssertionError('Invalid blockchain value')
 
@@ -254,6 +260,7 @@ class ChainManager(CacheableMixIn, LockableQueryMixIn):
             blockchain_accounts: BlockchainAccounts,
             ethereum_manager: 'EthereumManager',
             kusama_manager: 'SubstrateManager',
+            avalanche_manager: 'AvalancheManager',
             msg_aggregator: MessagesAggregator,
             database: 'DBHandler',
             greenlet_manager: GreenletManager,
@@ -267,6 +274,7 @@ class ChainManager(CacheableMixIn, LockableQueryMixIn):
         super().__init__()
         self.ethereum = ethereum_manager
         self.kusama = kusama_manager
+        self.avalanche = avalanche_manager
         self.database = database
         self.msg_aggregator = msg_aggregator
         self.accounts = blockchain_accounts

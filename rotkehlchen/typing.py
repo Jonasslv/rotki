@@ -205,7 +205,7 @@ class SupportedBlockchain(Enum):
     ETHEREUM = 'ETH'
     BITCOIN = 'BTC'
     KUSAMA = 'KSM'
-
+    AVALANCHE = 'AVAX'
     def get_address_type(self) -> Callable:
         if self == SupportedBlockchain.ETHEREUM:
             return ChecksumEthAddress
@@ -213,6 +213,8 @@ class SupportedBlockchain(Enum):
             return BTCAddress
         if self == SupportedBlockchain.KUSAMA:
             return KusamaAddress
+        if self == SupportedBlockchain.AVALANCHE:
+            return ChecksumEthAddress
         raise AssertionError(f'Invalid SupportedBlockchain value: {self}')
 
     def ens_coin_type(self) -> int:
@@ -227,6 +229,8 @@ class SupportedBlockchain(Enum):
             return 0
         if self == SupportedBlockchain.KUSAMA:
             return 434
+        if self == SupportedBlockchain.AVALANCHE:
+            return 9000
         raise AssertionError(f'Invalid SupportedBlockchain value: {self}')
 
 
