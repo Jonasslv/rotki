@@ -5,7 +5,7 @@ from typing import Dict, List, Optional, Set
 from rotkehlchen.db.dbhandler import DBHandler
 from rotkehlchen.db.ranges import DBQueryRanges
 from rotkehlchen.errors import RemoteError
-from rotkehlchen.externalapis.etherscan import Etherscan
+from rotkehlchen.externalapis.covalent import Covalent
 from rotkehlchen.logging import RotkehlchenLogsAdapter
 from rotkehlchen.typing import ChecksumEthAddress, EthereumTransaction, Timestamp
 from rotkehlchen.user_messages import MessagesAggregator
@@ -22,12 +22,12 @@ class EthTransactions(LockableQueryMixIn):
     def __init__(
             self,
             database: DBHandler,
-            etherscan: Etherscan,
+            covalent: Covalent,
             msg_aggregator: MessagesAggregator,
     ) -> None:
         super().__init__()
         self.database = database
-        self.etherscan = etherscan
+        self.covalent = covalent
         self.msg_aggregator = msg_aggregator
         self.tx_per_address: Dict[ChecksumEthAddress, int] = defaultdict(int)
 
@@ -78,9 +78,8 @@ class EthTransactions(LockableQueryMixIn):
         for query_start_ts, query_end_ts in ranges_to_query:
             for internal in (False, True):
                 try:
-                    new_transactions.extend(self.etherscan.get_transactions(
+                    new_transactions.extend(self.covalent.get_transactions(
                         account=address,
-                        internal=internal,
                         from_ts=query_start_ts,
                         to_ts=query_end_ts,
                     ))
@@ -92,7 +91,7 @@ class EthTransactions(LockableQueryMixIn):
                         f'to_ts: {query_end_ts} '
                         f'internal: {internal}',
                     )
-
+        #TODO: CRIAR TABELA AVALANCHE NO DB PARA DIFERENCIAR DAS TRANSAÇÕES DO ETH
         # add new transactions to the DB
         if new_transactions != []:
             self.database.add_ethereum_transactions(new_transactions, from_etherscan=True)
