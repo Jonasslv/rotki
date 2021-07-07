@@ -251,42 +251,29 @@ class AvalancheManager():
 
         return hex_or_bytes_to_str(web3.eth.getCode(account))
 
-    def _get_transaction_receipt(
-            self,
-            web3: Optional[Web3],
-            tx_hash: str,
-    ) -> Dict[str, Any]:
-        if web3 is None:
-            tx_receipt = self.covalent.get_transaction_receipt(tx_hash)
-            try:
-                # Turn hex numbers to int
-                block_number = tx_receipt['blockNumber']
-                tx_receipt['blockNumber'] = block_number
-                tx_receipt['cumulativeGasUsed'] = tx_receipt['gas_spent']
-                tx_receipt['gasUsed'] = tx_receipt['gas_spent']
-                tx_receipt['status'] = 1 if tx_receipt['successful'] else 0
-                tx_receipt['transactionIndex'] = 0
-                for receipt_log in tx_receipt['log_events']:
-                    receipt_log['blockNumber'] = block_number
-                    receipt_log['logIndex'] = receipt_log['log_offset']
-                    receipt_log['transactionIndex'] = 0
-            except (DeserializationError, ValueError) as e:
-                raise RemoteError(
-                    f'Couldnt deserialize transaction receipt data from covalent {tx_receipt}',
-                ) from e
-            return tx_receipt
-
-        tx_receipt = web3.eth.get_transaction_receipt(tx_hash)  # type: ignore
-        return tx_receipt
-
     def get_transaction_receipt(
             self,
             tx_hash: str
     ) -> Dict[str, Any]:
-        return self.query(
-            method=self._get_transaction_receipt,
-            tx_hash=tx_hash,
-        )
+        tx_receipt = self.covalent.get_transaction_receipt(tx_hash)
+        try:
+            # Turn hex numbers to int
+            block_number = tx_receipt['block_height']
+            tx_receipt['blockNumber'] = tx_receipt.pop('block_height', None)
+            tx_receipt['cumulativeGasUsed'] = tx_receipt.pop('gas_spent', None)
+            tx_receipt['gasUsed'] = tx_receipt.pop('gas_spent', None)
+            successful = tx_receipt.pop('successful', None)
+            tx_receipt['status'] = 1 if successful else 0
+            tx_receipt['transactionIndex'] = 0
+            for receipt_log in tx_receipt['log_events']:
+                receipt_log['blockNumber'] = block_number
+                receipt_log['logIndex'] = receipt_log.pop('log_offset', None)
+                receipt_log['transactionIndex'] = 0
+        except (DeserializationError, ValueError) as e:
+            raise RemoteError(
+                f'Couldnt deserialize transaction receipt data from covalent {tx_receipt}',
+            ) from e
+        return tx_receipt
 
     def call_contract(
             self,
@@ -443,3 +430,6 @@ class AvalancheManager():
             # the same length as the tuple of properties
             return {'decimals': None, 'symbol': None , 'name': None}
         return info
+    
+    def teste(self):
+        return 's'

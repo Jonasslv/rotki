@@ -210,7 +210,7 @@ class Covalent(ExternalServiceWithApiKey):
             module=tx_hash,
             action='transaction_v2'
         )
-        return result
+        return result['data']['items'][0]
     
     def get_token_balances_address(self, address: ChecksumEthAddress):
         options = {'limit': COVALENT_QUERY_LIMIT, 'page-size': 8000}
