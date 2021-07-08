@@ -199,6 +199,63 @@ class EthereumTransaction(NamedTuple):
     def identifier(self) -> str:
         return '0x' + self.tx_hash.hex() + self.from_address + str(self.nonce)
 
+class AvalancheTransaction():
+    
+    def __init__(self, tx_hash: bytes,
+        timestamp: Timestamp,
+        block_number: int,
+        from_address: ChecksumEthAddress,
+        to_address: Optional[ChecksumEthAddress],
+        value: int,
+        gas: int,
+        gas_price: int,
+        gas_used: int,
+        input_data: str,
+        nonce: int):
+        self.tx_hash = '0x' + tx_hash.hex()
+        self.timestamp = timestamp
+        self.block_number = block_number
+        self.from_address = from_address
+        self.to_address = to_address
+        self.value = value
+        self.gas = gas
+        self.gas_price = gas_price
+        self.gas_used = gas_used
+        self.input_data = input_data
+        self.nonce = nonce
+
+    def serialize(self) -> Dict[str, Any]:
+        result = {
+            'tx_hash': self.tx_hash,
+            'timestamp': self.timestamp,
+            'block_number': self.block_number,
+            'from_address': self.from_address,
+            'to_address': self.to_address,
+            'value': self.value,
+            'gas': self.gas,
+            'gas_price': self.gas_price,
+            'gas_used': self.gas_used,
+            'input_data': self.input_data,
+            'nonce': self.nonce
+        }
+        
+        return result
+
+    def __hash__(self) -> int:
+        return hash(self.identifier)
+
+    def __eq__(self, other: Any) -> bool:
+        if other is None:
+            return False
+
+        if not isinstance(other, AvalancheTransaction):
+            return False
+
+        return hash(self) == hash(other)
+
+    @property
+    def identifier(self) -> str:
+        return '0x' + self.tx_hash.hex() + self.from_address + str(self.nonce)
 
 class SupportedBlockchain(Enum):
     """These are the blockchains for which account tracking is supported """

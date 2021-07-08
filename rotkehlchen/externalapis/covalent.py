@@ -22,7 +22,7 @@ from rotkehlchen.serialization.deserialize import (
     deserialize_int_from_str,
     deserialize_timestamp,
 )
-from rotkehlchen.typing import ChecksumEthAddress,EthereumTransaction , ExternalService, Timestamp
+from rotkehlchen.typing import ChecksumEthAddress,AvalancheTransaction , ExternalService, Timestamp
 from rotkehlchen.utils.misc import convert_to_int, hex_or_bytes_to_int, hexstring_to_bytes
 from rotkehlchen.user_messages import MessagesAggregator
 
@@ -58,7 +58,7 @@ def web3_gettransaction(tx_hash):
 
 def convert_transaction_from_covalent(
         data: Dict[str, Any],
-) -> EthereumTransaction:
+) -> AvalancheTransaction:
     """Reads dict data of a transaction from etherscan and deserializes it
 
     Can raise DeserializationError if something is wrong
@@ -66,9 +66,10 @@ def convert_transaction_from_covalent(
     try:
         # internal tx list contains no gasprice
         timestamp = datetime.timestamp(datetime.strptime(data['block_signed_at'], '%Y-%m-%dT%H:%M:%SZ'))
-        input_data, nonce = web3_gettransaction(data['tx_hash'])
+        #TODO RETIRADO POIS WEB3 É MUITO LENTO
+        #input_data, nonce = web3_gettransaction(data['tx_hash'])
         
-        return EthereumTransaction(
+        return AvalancheTransaction(
             timestamp=timestamp,
             block_number=data['block_height'],
             tx_hash=read_hash(data, 'tx_hash'),
@@ -78,12 +79,12 @@ def convert_transaction_from_covalent(
             gas=read_integer(data, 'gas_offered'),
             gas_price=read_integer(data, 'gas_price'),
             gas_used=read_integer(data, 'gas_spent'),
-            input_data=input_data,
-            nonce=nonce,
+            input_data='0x',
+            nonce=0,
         )
     except KeyError as e:
         raise DeserializationError(
-            f'Etherscan ethereum transaction missing expected key {str(e)}',
+            f'Covalent avalanche transaction missing expected key {str(e)}',
         ) from e
 
 
@@ -161,7 +162,7 @@ class Covalent(ExternalServiceWithApiKey):
             account: ChecksumEthAddress,
             from_ts: Optional[Timestamp] = None,
             to_ts: Optional[Timestamp] = None,
-    ) -> List[EthereumTransaction]:
+    ) -> List[AvalancheTransaction]:
         """Gets a list of transactions (either normal or internal) for account.\n
         account is address for wallet.\n
         to_ts is latest date.\n
@@ -170,10 +171,10 @@ class Covalent(ExternalServiceWithApiKey):
         - RemoteError due to self._query(). Also if the returned result
         is not in the expected format
         """
-        if to_ts is None: 
-            to_ts = datetime.timestamp(datetime.now())
             
         if from_ts:
+            if to_ts is None: 
+                to_ts = datetime.timestamp(datetime.now())
             result_master = list()
             for i in range(1,7):
                 options = {'limit': COVALENT_QUERY_LIMIT, 'page-size': 8000}
@@ -210,7 +211,10 @@ class Covalent(ExternalServiceWithApiKey):
             module=tx_hash,
             action='transaction_v2'
         )
-        return result['data']['items'][0]
+        transaction_receipt = result['data']['items'][0]
+        date = datetime.strptime(transaction_receipt['block_signed_at'], '%Y-%m-%dT%H:%M:%SZ')
+        transaction_receipt['timestamp'] = datetime.timestamp(date) 
+        return transaction_receipt
     
     def get_token_balances_address(self, address: ChecksumEthAddress):
         options = {'limit': COVALENT_QUERY_LIMIT, 'page-size': 8000}

@@ -24,7 +24,6 @@ from web3.types import FilterParams
 from rotkehlchen.chain.avalanche.contracts import EthereumContract
 from rotkehlchen.chain.avalanche.graph import Graph
 from rotkehlchen.chain.avalanche.transactions import EthTransactions
-from rotkehlchen.chain.avalanche.node_avalanche_web3 import Node_Avalanche_Web3
 from rotkehlchen.db.dbhandler import DBHandler
 from rotkehlchen.errors import (
     BlockchainQueryError,
@@ -147,8 +146,7 @@ class AvalancheManager():
             eth_rpc_timeout: int = DEFAULT_ETH_RPC_TIMEOUT,
     ) -> None:
         log.debug(f'Initializing Ethereum Manager with own rpc endpoint: {avaxrpc_endpoint}')
-        self.node_web3: Node_Avalanche_Web3
-        self.own_rpc_endpoint = avaxrpc_endpoint
+        self.w3 = Web3(HTTPProvider(avaxrpc_endpoint))
         self.covalent = covalent
         self.msg_aggregator = msg_aggregator
         self.eth_rpc_timeout = eth_rpc_timeout
@@ -159,34 +157,10 @@ class AvalancheManager():
         )
         
     def connected_to_any_web3(self) -> bool:
-        return self.node_web3.w3.isConnected()
-
-    def query(self, method: Callable, **kwargs: Any) -> Any:
-        """Queries ethereum related data by performing the provided method to all given nodes
-
-        The first node in the call order that gets a succcesful response returns.
-        If none get a result then a remote error is raised
-        """
-        try:
-            result = method(self.node_web3.w3, **kwargs)
-        except (RemoteError, BlockchainQueryError, requests.exceptions.RequestException) as e:
-            log.warning(f'Failed to query Avalanche RPC for {str(method)} due to {str(e)}')
-            # Catch all possible errors here and just try next node call
-        else:
-            return result
-        # no node in the call order list was succesfully queried
-        raise RemoteError(
-            f'Failed to query {str(method)} after trying the following '
-        )
-
-    def _get_latest_block_number(self, web3: Optional[Web3]) -> int:
-        if web3 is not None:
-            return web3.eth.block_number
+        return self.w3.isConnected()
 
     def get_latest_block_number(self) -> int:
-        return self.query(
-            method=self._get_latest_block_number
-        )
+            return self.w3.eth.block_number
 
     def get_eth_balance(self, account: ChecksumEthAddress) -> FVal:
         """Gets the balance of the given account in ETH
@@ -211,16 +185,7 @@ class AvalancheManager():
 
         return [False]
 
-    def get_block_by_number(
-            self,
-            num: int,
-    ) -> Dict[str, Any]:
-        return self.query(
-            method=self._get_block_by_number,
-            num=num,
-        )
-
-    def _get_block_by_number(self, web3: Optional[Web3], num: int) -> Dict[str, Any]:
+    def get_block_by_number(self, num: int) -> Dict[str, Any]:
         """Returns the block object corresponding to the given block number
 
         May raise:
@@ -228,20 +193,11 @@ class AvalancheManager():
         there is a problem with its query.
         """
 
-        block_data: MutableAttributeDict = MutableAttributeDict(web3.eth.get_block(num))  # type: ignore # pylint: disable=no-member  # noqa: E501
+        block_data: MutableAttributeDict = MutableAttributeDict(self.w3.eth.get_block(num))  # type: ignore # pylint: disable=no-member  # noqa: E501
         block_data['hash'] = hex_or_bytes_to_str(block_data['hash'])
         return dict(block_data)
 
-    def get_code(
-            self,
-            account: ChecksumEthAddress,
-    ) -> str:
-        return self.query(
-            method=self._get_code,
-            account=account,
-        )
-
-    def _get_code(self, web3: Optional[Web3], account: ChecksumEthAddress) -> str:
+    def get_code(self, account: ChecksumEthAddress) -> str:
         """Gets the deployment bytecode at the given address
 
         May raise:
@@ -249,7 +205,7 @@ class AvalancheManager():
         parsing its response
         """
 
-        return hex_or_bytes_to_str(web3.eth.getCode(account))
+        return hex_or_bytes_to_str(self.w3.eth.getCode(account))
 
     def get_transaction_receipt(
             self,
@@ -258,17 +214,23 @@ class AvalancheManager():
         tx_receipt = self.covalent.get_transaction_receipt(tx_hash)
         try:
             # Turn hex numbers to int
+            tx_receipt.pop('from_address_label', None)
+            tx_receipt.pop('to_address_label', None)
+            transaction = self.w3.eth.get_transaction(tx_hash)
             block_number = tx_receipt['block_height']
             tx_receipt['blockNumber'] = tx_receipt.pop('block_height', None)
             tx_receipt['cumulativeGasUsed'] = tx_receipt.pop('gas_spent', None)
-            tx_receipt['gasUsed'] = tx_receipt.pop('gas_spent', None)
+            tx_receipt['gasUsed'] = tx_receipt['cumulativeGasUsed']
             successful = tx_receipt.pop('successful', None)
             tx_receipt['status'] = 1 if successful else 0
             tx_receipt['transactionIndex'] = 0
-            for receipt_log in tx_receipt['log_events']:
+            tx_receipt['input'] = transaction.input
+            tx_receipt['nonce'] = transaction.nonce
+            for index, receipt_log in enumerate(tx_receipt['log_events']):
                 receipt_log['blockNumber'] = block_number
                 receipt_log['logIndex'] = receipt_log.pop('log_offset', None)
                 receipt_log['transactionIndex'] = 0
+                tx_receipt['log_events'][index] =  receipt_log
         except (DeserializationError, ValueError) as e:
             raise RemoteError(
                 f'Couldnt deserialize transaction receipt data from covalent {tx_receipt}',
@@ -282,22 +244,6 @@ class AvalancheManager():
             method_name: str,
             arguments: Optional[List[Any]] = None,
     ) -> Any:
-        return self.query(
-            method=self._call_contract,
-            contract_address=contract_address,
-            abi=abi,
-            method_name=method_name,
-            arguments=arguments,
-        )
-
-    def _call_contract(
-            self,
-            web3: Optional[Web3],
-            contract_address: ChecksumEthAddress,
-            abi: List,
-            method_name: str,
-            arguments: Optional[List[Any]] = None,
-    ) -> Any:
         """Performs an eth_call to an ethereum contract
 
         May raise:
@@ -306,7 +252,7 @@ class AvalancheManager():
         - BlockchainQueryError if web3 is used and there is a VM execution error
         """
 
-        contract = self.node_web3.w3.eth.contract(address=contract_address, abi=abi)
+        contract = self.w3.eth.contract(address=contract_address, abi=abi)
         try:
             method = getattr(contract.caller, method_name)
             result = method(*arguments if arguments else [])
@@ -315,25 +261,6 @@ class AvalancheManager():
                 f'Error doing call on contract {contract_address}: {str(e)}',
             ) from e
         return result
-
-    def get_logs(
-            self,
-            contract_address: ChecksumEthAddress,
-            abi: List,
-            event_name: str,
-            argument_filters: Dict[str, Any],
-            from_block: int,
-            to_block: Union[int, Literal['latest']] = 'latest',
-    ) -> List[Dict[str, Any]]:
-        return self.query(
-            method=self._get_logs,
-            contract_address=contract_address,
-            abi=abi,
-            event_name=event_name,
-            argument_filters=argument_filters,
-            from_block=from_block,
-            to_block=to_block,
-        )
 
     def _get_logs(
             self,
@@ -430,6 +357,3 @@ class AvalancheManager():
             # the same length as the tuple of properties
             return {'decimals': None, 'symbol': None , 'name': None}
         return info
-    
-    def teste(self):
-        return 's'

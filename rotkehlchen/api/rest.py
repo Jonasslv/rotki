@@ -90,6 +90,7 @@ from rotkehlchen.typing import (
     BlockchainAccountData,
     ChecksumEthAddress,
     EthereumTransaction,
+    AvalancheTransaction,
     ExternalService,
     ExternalServiceApiCredentials,
     Fee,
@@ -3032,3 +3033,33 @@ class RestAPI():
             ),
             status_code=HTTPStatus.OK,
         )
+    
+    @require_loggedin_user()
+    def get_avalanche_transactions(self, address: ChecksumEthAddress, from_timestamp: Timestamp, to_timestamp: Timestamp) -> Response:
+        import traceback
+        try:
+            avalanche = self.rotkehlchen.chain_manager.avalanche
+            response = avalanche.covalent.get_transactions(address,from_timestamp,to_timestamp)
+            if response is not None:
+                entries_result = list()
+                for transaction in response:
+                    entries_result.append(
+                        transaction.serialize()
+                    )
+            else:
+                entries_result = list()
+            result = {
+                'entries': entries_result,
+                'entries_found': len(entries_result)
+                }
+            msg = ''
+            result_dict = _wrap_in_result(result, msg)
+            return api_response(process_result(result_dict), status_code=HTTPStatus.OK)
+        except:
+            a = str(traceback.format_exc())
+            return api_response(wrap_in_fail_result(a), status_code=404)
+        
+        if response is None:
+            return api_response(wrap_in_fail_result('not found'), status_code=404)
+             
+        

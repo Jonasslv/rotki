@@ -1598,3 +1598,38 @@ class BinanceUserMarkets(BaseResource):
     @use_kwargs(get_schema, location='json_and_query_and_view_args')
     def get(self, name: str, location: Location) -> Response:
         return self.rest_api.get_user_binance_pairs(name, location)
+
+class testeResource(BaseResource):
+    get_schema = ERC20InfoSchema()
+    
+    @use_kwargs(get_schema, location='json_and_query_and_view_args')
+    def get(self, address: ChecksumEthAddress, async_query: bool)  -> Response:
+        import traceback
+        try:
+            return self.rest_api.get_teste(address)
+        except:
+            a = str(traceback.format_exc())
+            return a
+        
+        
+class AvalancheTransactionsResource(BaseResource):
+    get_schema = EthereumTransactionQuerySchema()
+
+    @use_kwargs(get_schema, location='json_and_query_and_view_args')
+    def get(
+            self,
+            async_query: bool,
+            address: Optional[ChecksumEthAddress],
+            from_timestamp: Timestamp,
+            to_timestamp: Timestamp,
+            only_cache: bool,
+    ) -> Response:
+        return self.rest_api.get_avalanche_transactions(
+            address=address,
+            from_timestamp=from_timestamp,
+            to_timestamp=to_timestamp,
+        )
+
+    def delete(self) -> Response:
+        #TODO ADICIONAR QUANDO CRIAR O BANCO PARA DELETAR DELE
+        return 'DELETADO'
