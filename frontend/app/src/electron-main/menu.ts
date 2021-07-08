@@ -12,7 +12,7 @@ const debugMenu = {
   label: '&Debug',
   submenu: [
     {
-      label: 'Botãozinho do capeta',
+      label: 'Persist vuex state',
       type: 'checkbox',
       checked: debugSettings.vuex,
       click: async (item: MenuItem, browserWindow: BrowserWindow) => {
