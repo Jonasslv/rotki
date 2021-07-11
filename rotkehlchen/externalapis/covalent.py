@@ -141,7 +141,14 @@ class Covalent(ExternalServiceWithApiKey):
                             'after we incrementally backed off',
                         ) from e
                     continue
-
+                
+                if isinstance(e,requests.exceptions.Timeout):
+                    if backoff >= backoff_limit:
+                        return False
+                    else:
+                        backoff = 33
+                        continue
+                    
                 raise RemoteError(f'Covalent API request failed due to {str(e)}') from e
 
             if response.status_code != 200:
@@ -162,7 +169,8 @@ class Covalent(ExternalServiceWithApiKey):
             account: ChecksumEthAddress,
             from_ts: Optional[Timestamp] = None,
             to_ts: Optional[Timestamp] = None,
-    ) -> List[AvalancheTransaction]:
+            get_log: bool = False
+    ):
         """Gets a list of transactions (either normal or internal) for account.\n
         account is address for wallet.\n
         to_ts is latest date.\n
@@ -179,12 +187,15 @@ class Covalent(ExternalServiceWithApiKey):
             for i in range(1,7):
                 options = {'limit': COVALENT_QUERY_LIMIT, 'page-size': 8000}
                 result = self._query(module='transactions_v2', address=account, action='address', options=options)
-                last_date = datetime.strptime(result['data']['items'][-1]['block_signed_at'], '%Y-%m-%dT%H:%M:%SZ')
-                result_master += result['data']['items']
-                if datetime.timestamp(last_date) <= from_ts:
-                    break
+                if result is False:
+                    return result
                 else:
-                    options = {'limit': COVALENT_QUERY_LIMIT, 'page-size': 8000, 'skip': i*COVALENT_QUERY_LIMIT}
+                    last_date = datetime.strptime(result['data']['items'][-1]['block_signed_at'], '%Y-%m-%dT%H:%M:%SZ')
+                    result_master += result['data']['items']
+                    if datetime.timestamp(last_date) <= from_ts:
+                        break
+                    else:
+                        options = {'limit': COVALENT_QUERY_LIMIT, 'page-size': 8000, 'skip': i*COVALENT_QUERY_LIMIT}
                     
             def between_date(value):
                 date = datetime.strptime(value['block_signed_at'], '%Y-%m-%dT%H:%M:%SZ')
@@ -193,8 +204,14 @@ class Covalent(ExternalServiceWithApiKey):
             list_transactions = list(filter(between_date,result_master))
         else:
             result = self._query(module='transactions_v2', address=account, action='address', options={'limit': 1000, 'page-size': 8000})
-            list_transactions = result['data']['items']
+            if result is False:
+                return result
+            else:
+                list_transactions = result['data']['items']
             
+        if get_log is True:
+            return list_transactions
+        
         transactions = list()
         for transaction in list_transactions:
             transactions.append(convert_transaction_from_covalent(transaction))
@@ -211,13 +228,19 @@ class Covalent(ExternalServiceWithApiKey):
             module=tx_hash,
             action='transaction_v2'
         )
-        transaction_receipt = result['data']['items'][0]
-        date = datetime.strptime(transaction_receipt['block_signed_at'], '%Y-%m-%dT%H:%M:%SZ')
-        transaction_receipt['timestamp'] = datetime.timestamp(date) 
-        return transaction_receipt
+        if result is False:
+            return result
+        else:
+            transaction_receipt = result['data']['items'][0]
+            date = datetime.strptime(transaction_receipt['block_signed_at'], '%Y-%m-%dT%H:%M:%SZ')
+            transaction_receipt['timestamp'] = datetime.timestamp(date) 
+            return transaction_receipt
     
     def get_token_balances_address(self, address: ChecksumEthAddress):
         options = {'limit': COVALENT_QUERY_LIMIT, 'page-size': 8000}
         result = self._query(module='balances_v2', address=address, action='address', options=options)
-        return result['data']['items']
+        if result is False:
+            return result
+        else:
+            return result['data']['items']
 
