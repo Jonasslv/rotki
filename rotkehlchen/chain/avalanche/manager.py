@@ -3,6 +3,7 @@ import logging
 import random
 from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple, Union, overload
 from urllib.parse import urlparse
+from datetime import datetime
 
 import requests
 from ens import ENS
@@ -69,73 +70,6 @@ def _is_synchronized(current_block: int, latest_block: int) -> Tuple[bool, str]:
 
 WEB3_LOGQUERY_BLOCK_RANGE = 250000
 
-
-def _query_web3_get_logs(
-        web3: Web3,
-        filter_args: FilterParams,
-        from_block: int,
-        to_block: Union[int, Literal['latest']],
-        contract_address: ChecksumEthAddress,
-        event_name: str,
-        argument_filters: Dict[str, Any],
-) -> List[Dict[str, Any]]:
-    until_block = web3.eth.block_number if to_block == 'latest' else to_block
-    events: List[Dict[str, Any]] = []
-    start_block = from_block
-
-    block_range = initial_block_range = WEB3_LOGQUERY_BLOCK_RANGE
-
-
-    while start_block <= until_block:
-        filter_args['fromBlock'] = start_block
-        end_block = min(start_block + block_range, until_block)
-        filter_args['toBlock'] = end_block
-        log.debug(
-            'Querying web3 node for contract event',
-            contract_address=contract_address,
-            event_name=event_name,
-            argument_filters=argument_filters,
-            from_block=filter_args['fromBlock'],
-            to_block=filter_args['toBlock'],
-        )
-        # As seen in https://github.com/rotki/rotki/issues/1787, the json RPC, if it
-        # is infura can throw an error here which we can only parse by catching the  exception
-        try:
-            new_events_web3: List[Dict[str, Any]] = [dict(x) for x in web3.eth.get_logs(filter_args)]  # noqa: E501
-        except ValueError as e:
-            try:
-                decoded_error = json.loads(str(e).replace("'", '"'))
-            except json.JSONDecodeError:
-                # reraise the value error if the error is not json
-                raise e from None
-
-            msg = decoded_error.get('message', '')
-            # errors from: https://infura.io/docs/ethereum/json-rpc/eth-getLogs
-            if msg in ('query returned more than 10000 results', 'query timeout exceeded'):
-                block_range = block_range // 2
-                if block_range < 50:
-                    raise  # stop retrying if block range gets too small
-                # repeat the query with smaller block range
-                continue
-            # else, well we tried .. reraise the Value error
-            raise e
-
-        # Turn all HexBytes into hex strings
-        for e_idx, event in enumerate(new_events_web3):
-            new_events_web3[e_idx]['blockHash'] = event['blockHash'].hex()
-            new_topics = []
-            for topic in event['topics']:
-                new_topics.append(topic.hex())
-            new_events_web3[e_idx]['topics'] = new_topics
-            new_events_web3[e_idx]['transactionHash'] = event['transactionHash'].hex()
-
-        start_block = end_block + 1
-        events.extend(new_events_web3)
-        # end of the loop, end of 1 query. Reset the block range to max
-        block_range = initial_block_range
-
-    return events
-
 class AvalancheManager():
     def __init__(
             self,
@@ -146,10 +80,16 @@ class AvalancheManager():
             eth_rpc_timeout: int = DEFAULT_ETH_RPC_TIMEOUT,
     ) -> None:
         log.debug(f'Initializing Ethereum Manager with own rpc endpoint: {avaxrpc_endpoint}')
-        self.w3 = Web3(HTTPProvider(avaxrpc_endpoint))
+        self.eth_rpc_timeout = eth_rpc_timeout
+        self.w3 = Web3(
+            HTTPProvider(
+                endpoint_uri=avaxrpc_endpoint,
+                request_kwargs={'timeout': self.eth_rpc_timeout},
+            )
+        )
         self.covalent = covalent
         self.msg_aggregator = msg_aggregator
-        self.eth_rpc_timeout = eth_rpc_timeout
+        #TODO: MUDA PARA O BANCO DA AVAX (quando criar)
         self.transactions = EthTransactions(
             database=database,
             covalent=covalent,
@@ -169,8 +109,16 @@ class AvalancheManager():
         - RemoteError if Etherscan is used and there is a problem querying it or
         parsing its response
         """
-        result = self.get_multieth_balance([account])
-        return result[account]
+        result = self.covalent.get_token_balances_address(account)
+        if result is False:
+            balance = from_wei(self.w3.eth.get_balance(account))
+            return balance
+        else:
+            def filter_avax(value):
+                return value['contract_address'] == '0x9debca6ea3af87bf422cea9ac955618ceb56efb4'
+            
+            avax_coin = list(filter(filter_avax, result))
+            return float(avax_coin[0]['quote'])/float(avax_coin[0]['quote_rate']) if float(avax_coin[0]['quote_rate']) != 0 else 0
 
     def get_multieth_balance(
             self,
@@ -182,8 +130,10 @@ class AvalancheManager():
         - RemoteError if an external service such as Etherscan is queried and
           there is a problem with its query.
         """
-
-        return [False]
+        balances = dict()
+        for account in accounts:
+            balances[account] = self.get_eth_balance(account)
+        return balances
 
     def get_block_by_number(self, num: int) -> Dict[str, Any]:
         """Returns the block object corresponding to the given block number
@@ -212,30 +162,32 @@ class AvalancheManager():
             tx_hash: str
     ) -> Dict[str, Any]:
         tx_receipt = self.covalent.get_transaction_receipt(tx_hash)
-        try:
-            # Turn hex numbers to int
-            tx_receipt.pop('from_address_label', None)
-            tx_receipt.pop('to_address_label', None)
-            transaction = self.w3.eth.get_transaction(tx_hash)
-            block_number = tx_receipt['block_height']
-            tx_receipt['blockNumber'] = tx_receipt.pop('block_height', None)
-            tx_receipt['cumulativeGasUsed'] = tx_receipt.pop('gas_spent', None)
-            tx_receipt['gasUsed'] = tx_receipt['cumulativeGasUsed']
-            successful = tx_receipt.pop('successful', None)
-            tx_receipt['status'] = 1 if successful else 0
-            tx_receipt['transactionIndex'] = 0
-            tx_receipt['input'] = transaction.input
-            tx_receipt['nonce'] = transaction.nonce
-            for index, receipt_log in enumerate(tx_receipt['log_events']):
-                receipt_log['blockNumber'] = block_number
-                receipt_log['logIndex'] = receipt_log.pop('log_offset', None)
-                receipt_log['transactionIndex'] = 0
-                tx_receipt['log_events'][index] =  receipt_log
-        except (DeserializationError, ValueError) as e:
-            raise RemoteError(
-                f'Couldnt deserialize transaction receipt data from covalent {tx_receipt}',
-            ) from e
-        return tx_receipt
+        if tx_receipt is False:
+            return self.w3.eth.get_transaction(tx_hash)
+        else:
+            try:
+                # Turn hex numbers to int
+                tx_receipt.pop('from_address_label', None)
+                tx_receipt.pop('to_address_label', None)
+                block_number = tx_receipt['block_height']
+                tx_receipt['blockNumber'] = tx_receipt.pop('block_height', None)
+                tx_receipt['cumulativeGasUsed'] = tx_receipt.pop('gas_spent', None)
+                tx_receipt['gasUsed'] = tx_receipt['cumulativeGasUsed']
+                successful = tx_receipt.pop('successful', None)
+                tx_receipt['status'] = 1 if successful else 0
+                tx_receipt['transactionIndex'] = 0
+                tx_receipt['input'] = '0x'
+                tx_receipt['nonce'] = 0
+                for index, receipt_log in enumerate(tx_receipt['log_events']):
+                    receipt_log['blockNumber'] = block_number
+                    receipt_log['logIndex'] = receipt_log.pop('log_offset', None)
+                    receipt_log['transactionIndex'] = 0
+                    tx_receipt['log_events'][index] =  receipt_log
+            except (DeserializationError, ValueError) as e:
+                raise RemoteError(
+                    f'Couldnt deserialize transaction receipt data from covalent {tx_receipt}',
+                ) from e
+            return tx_receipt
 
     def call_contract(
             self,
@@ -262,68 +214,23 @@ class AvalancheManager():
             ) from e
         return result
 
-    def _get_logs(
-            self,
-            web3: Optional[Web3],
-            contract_address: ChecksumEthAddress,
-            abi: List,
-            event_name: str,
-            argument_filters: Dict[str, Any],
-            from_block: int,
-            to_block: Union[int, Literal['latest']] = 'latest',
-    ) -> List[Dict[str, Any]]:
-        """Queries logs of an ethereum contract
-
-        May raise:
-        - RemoteError if etherscan is used and there is a problem with
-        reaching it or with the returned result
-        """
-        event_abi = find_matching_event_abi(abi=abi, event_name=event_name)
-        _, filter_args = construct_event_filter_params(
-            event_abi=event_abi,
-            abi_codec=Web3().codec,
-            contract_address=contract_address,
-            argument_filters=argument_filters,
-            fromBlock=from_block,
-            toBlock=to_block,
-        )
-        if event_abi['anonymous']:
-            # web3.py does not handle the anonymous events correctly and adds the first topic
-            filter_args['topics'] = filter_args['topics'][1:]
-        events: List[Dict[str, Any]] = []
-        if web3 is not None:
-            events = _query_web3_get_logs(
-                web3=web3,
-                filter_args=filter_args,
-                from_block=from_block,
-                to_block=to_block,
-                contract_address=contract_address,
-                event_name=event_name,
-                argument_filters=argument_filters,
-            )
-
-        return events
-
-    def get_event_timestamp(self, event: Dict[str, Any]) -> Timestamp:
-        """Reads an event returned either by etherscan or web3 and gets its timestamp
-
-        Etherscan events contain a timestamp. Normal web3 events don't so it needs to
-        be queried from the block number
-
-        WE could also add this to the get_logs() call but would add unnecessary
-        rpc calls for get_block_by_number() for each log entry. Better have it
-        lazy queried like this.
-
-        TODO: Perhaps better approach would be a log event class for this
-        """
-        if 'timeStamp' in event:
-            # event from etherscan
-            return Timestamp(event['timeStamp'])
-
-        # event from web3
-        block_number = event['blockNumber']
-        block_data = self.get_block_by_number(block_number)
-        return Timestamp(block_data['timestamp'])
+    def get_logs(self, 
+                contract_address: ChecksumEthAddress,
+                abi: List,
+                event_name: str,
+                argument_filters: Dict[str, Any],
+                from_timestamp: int,
+                to_timestamp: Union[int, Literal['latest']] = 'latest',):
+        result =  self.covalent.get_transactions(contract_address, from_timestamp, to_timestamp, True)
+        events = list()
+        for transaction in result:
+            if transaction['log_events']:
+                for log in transaction['log_events']:
+                    if log['decoded']['name'].lower() == event_name.lower():
+                        date = datetime.strptime(log['block_signed_at'], '%Y-%m-%dT%H:%M:%SZ')
+                        log['timestamp'] = datetime.timestamp(date)
+                        events.append(log)
+        return events if len(events) else None
 
     def get_basic_contract_info(self, address: ChecksumEthAddress) -> Dict[str, Any]:
         """
@@ -336,12 +243,11 @@ class AvalancheManager():
         """
         properties = ('decimals', 'symbol', 'name')
         info: Dict[str, Any] = {}
-
         try:
                         # Output contains call status and result
             graph = Graph('https://api.thegraph.com/subgraphs/name/dasconnor/pangolin-dex')
             output = graph.query(
-                f'''{{token(id:"{address}"){{
+                f'''{{token(id:"{address.lower()}"){{
                     symbol
                     name
                     decimals
