@@ -1549,7 +1549,7 @@ class BlockchainAccountsDeleteSchema(Schema):
             data['accounts'] = [
                 _transform_btc_address(self.ethereum_manager, x) for x in data['accounts']
             ]
-        if data['blockchain'] == SupportedBlockchain.ETHEREUM:
+        if data['blockchain'] == SupportedBlockchain.ETHEREUM or data['blockchain'] == SupportedBlockchain.AVALANCHE:
             data['accounts'] = [
                 _transform_eth_address(self.ethereum_manager, x) for x in data['accounts']
             ]
