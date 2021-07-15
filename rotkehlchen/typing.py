@@ -79,7 +79,6 @@ class ExternalService(Enum):
     CRYPTOCOMPARE = 1
     BEACONCHAIN = 2
     LOOPRING = 3
-    COVALENT = 4
     
     @staticmethod
     def serialize(name: str) -> Optional['ExternalService']:
@@ -91,8 +90,6 @@ class ExternalService(Enum):
             return ExternalService.BEACONCHAIN
         if name == 'loopring':
             return ExternalService.LOOPRING
-        if name == 'covalent':
-            return ExternalService.COVALENT
         # else
         return None
 
@@ -263,6 +260,7 @@ class SupportedBlockchain(Enum):
     BITCOIN = 'BTC'
     KUSAMA = 'KSM'
     AVALANCHE = 'AVAX'
+    
     def get_address_type(self) -> Callable:
         if self == SupportedBlockchain.ETHEREUM:
             return ChecksumEthAddress

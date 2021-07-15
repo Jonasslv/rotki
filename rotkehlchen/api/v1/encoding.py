@@ -338,6 +338,8 @@ class BlockchainField(fields.Field):
             return SupportedBlockchain.ETHEREUM
         if value in ('ksm', 'KSM'):
             return SupportedBlockchain.KUSAMA
+        if value in ('avax', 'AVAX'):
+            return SupportedBlockchain.AVALANCHE
         raise ValidationError(f'Unrecognized value {value} given for blockchain name')
 
 
@@ -1323,6 +1325,29 @@ def _validate_blockchain_account_schemas(
                     field_name='address',
                 )
             given_addresses.add(address)
+            
+    elif data['blockchain'] == SupportedBlockchain.AVALANCHE:
+        for account_data in data['accounts']:
+            address_string = address_getter(account_data)
+            if not address_string.endswith('.eth'):
+                # Make sure that given value is an ethereum address
+                try:
+                    address = to_checksum_address(address_string)
+                except (ValueError, TypeError) as e:
+                    raise ValidationError(
+                        f'Given value {address_string} is not an ethereum address',
+                        field_name='address',
+                    ) from e
+            else:
+                # else it's ENS name and will be checked in the transformation step and not here
+                address = address_string
+
+            if address in given_addresses:
+                raise ValidationError(
+                    f'Address {address} appears multiple times in the request data',
+                    field_name='address',
+                )
+            given_addresses.add(address)
 
 
 def _transform_btc_address(
@@ -1477,7 +1502,7 @@ class BlockchainAccountsPatchSchema(Schema):
                     ethereum=self.ethereum_manager,
                     given_address=account['address'],
                 )
-        if data['blockchain'] == SupportedBlockchain.ETHEREUM:
+        if data['blockchain'] == SupportedBlockchain.ETHEREUM or data['blockchain'] == SupportedBlockchain.AVALANCHE:
             for idx, account in enumerate(data['accounts']):
                 data['accounts'][idx]['address'] = _transform_eth_address(
                     ethereum=self.ethereum_manager,

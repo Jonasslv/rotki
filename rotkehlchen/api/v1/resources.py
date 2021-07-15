@@ -770,7 +770,7 @@ class UsersByNameResource(BaseResource):
                 api_key=premium_api_key,
                 api_secret=premium_api_secret,
             )
-
+            
         if action == 'login':
             assert password is not None, 'Marshmallow validation should not let password=None here'
             return self.rest_api.user_login(
@@ -1598,19 +1598,6 @@ class BinanceUserMarkets(BaseResource):
     @use_kwargs(get_schema, location='json_and_query_and_view_args')
     def get(self, name: str, location: Location) -> Response:
         return self.rest_api.get_user_binance_pairs(name, location)
-
-class testeResource(BaseResource):
-    get_schema = ERC20InfoSchema()
-    
-    @use_kwargs(get_schema, location='json_and_query_and_view_args')
-    def get(self, address: ChecksumEthAddress, async_query: bool)  -> Response:
-        import traceback
-        try:
-            return self.rest_api.get_teste(address)
-        except:
-            a = str(traceback.format_exc())
-            return a
-        
         
 class AvalancheTransactionsResource(BaseResource):
     get_schema = EthereumTransactionQuerySchema()
@@ -1625,11 +1612,17 @@ class AvalancheTransactionsResource(BaseResource):
             only_cache: bool,
     ) -> Response:
         return self.rest_api.get_avalanche_transactions(
+            async_query = async_query,
             address=address,
             from_timestamp=from_timestamp,
             to_timestamp=to_timestamp,
-        )
+            only_cache = only_cache
+            )
+    
+class ERC20TokenInfoAVAX(BaseResource):
 
-    def delete(self) -> Response:
-        #TODO ADICIONAR QUANDO CRIAR O BANCO PARA DELETAR DELE
-        return 'DELETADO'
+    get_schema = ERC20InfoSchema()
+
+    @use_kwargs(get_schema, location='json_and_query')
+    def get(self, address: ChecksumEthAddress, async_query: bool) -> Response:
+        return self.rest_api.get_avax_token_information(address, async_query)

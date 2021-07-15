@@ -1183,6 +1183,7 @@ class RestAPI():
             self.rotkehlchen.reset_after_failed_account_creation_or_login()
             result_dict['message'] = str(e)
             return api_response(result_dict, status_code=HTTPStatus.CONFLICT)
+
         # Success!
         result_dict['result'] = {
             'exchanges': self.rotkehlchen.exchange_manager.get_connected_exchanges_info(),
@@ -3034,32 +3035,96 @@ class RestAPI():
             status_code=HTTPStatus.OK,
         )
     
+    def _get_avalanche_transactions(self,
+            address: Optional[ChecksumEthAddress],
+            from_timestamp: Timestamp,
+            to_timestamp: Timestamp,
+            only_cache: bool,
+        ):
+        #TODO: MUDAR PARA QUERY NO BANCO ASSIM QUE TER O DB
+        avalanche = self.rotkehlchen.chain_manager.avalanche
+        response = avalanche.covalent.get_transactions(address,from_timestamp,to_timestamp)
+        if response is not None and response is not False:
+            entries_result = list()
+            for transaction in response:
+                entries_result.append(transaction.serialize())
+        else:
+            return None
+        
+        result = {
+            'entries': entries_result,
+            'entries_found': len(entries_result)
+            }
+        msg = ''
+        return {'result': result, 'message': msg, 'status_code': HTTPStatus.OK}
+    
     @require_loggedin_user()
-    def get_avalanche_transactions(self, address: ChecksumEthAddress, from_timestamp: Timestamp, to_timestamp: Timestamp) -> Response:
-        import traceback
-        try:
-            avalanche = self.rotkehlchen.chain_manager.avalanche
-            response = avalanche.covalent.get_transactions(address,from_timestamp,to_timestamp)
-            if response is not None:
-                entries_result = list()
-                for transaction in response:
-                    entries_result.append(
-                        transaction.serialize()
-                    )
-            else:
-                entries_result = list()
-            result = {
-                'entries': entries_result,
-                'entries_found': len(entries_result)
-                }
-            msg = ''
-            result_dict = _wrap_in_result(result, msg)
-            return api_response(process_result(result_dict), status_code=HTTPStatus.OK)
-        except:
-            a = str(traceback.format_exc())
-            return api_response(wrap_in_fail_result(a), status_code=404)
+    def get_avalanche_transactions(self,
+            async_query: bool,
+            address: Optional[ChecksumEthAddress],
+            from_timestamp: Timestamp,
+            to_timestamp: Timestamp,
+            only_cache: bool,
+    ) -> Response:
+        if async_query:
+            return self._query_async(
+                command='_get_avalanche_transactions',
+                address=address,
+                from_timestamp=from_timestamp,
+                to_timestamp=to_timestamp,
+                only_cache=only_cache,
+            )
+
+        response = self._get_avalanche_transactions(
+            address=address,
+            from_timestamp=from_timestamp,
+            to_timestamp=to_timestamp,
+            only_cache=only_cache,
+        )
+        result = response['result']
+        msg = response['message']
+        status_code = _get_status_code_from_async_response(response)
         
         if response is None:
-            return api_response(wrap_in_fail_result('not found'), status_code=404)
-             
+            return api_response(wrap_in_fail_result('not found'), status_code=HTTPStatus.NOT_FOUND)
         
+        # success
+        result_dict = _wrap_in_result(result, msg)
+        return api_response(process_result(result_dict), status_code=status_code)
+             
+    def _get_avax_token_info(self, address: ChecksumEthAddress) -> Dict[str, Any]:
+        avax_manager = self.rotkehlchen.chain_manager.avalanche
+        try:
+            info = avax_manager.get_basic_contract_info(address=address)
+        except BadFunctionCallOutput:
+            return wrap_in_fail_result(
+                f'Address {address} seems to not be a deployed contract',
+                status_code=HTTPStatus.CONFLICT,
+            )
+        return _wrap_in_ok_result(info)
+
+    @require_loggedin_user()
+    def get_avax_token_information(
+        self,
+        token_address: ChecksumEthAddress,
+        async_query: bool,
+    ) -> Response:
+
+        if async_query:
+            return self._query_async(command='_get_avax_token_info', address=token_address)
+
+        response = self._get_avax_token_info(token_address)
+
+        result = response['result']
+        msg = response['message']
+        status_code = _get_status_code_from_async_response(response)
+        if result is None:
+            return api_response(wrap_in_fail_result(msg), status_code=status_code)
+
+        # Success
+        result_dict = _wrap_in_result(result, msg)
+        return api_response(result_dict, status_code=status_code)
+    
+    def get_teste(self):
+        self.rotkehlchen.unlock_user('ProDesert22','ed92e4c7e54e3f4a29d8041ec93124bd3c1ec4825701cac42b3fffaf0bd7120a',False,'no',None)
+        return False

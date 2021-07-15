@@ -237,7 +237,7 @@ class Rotkehlchen():
             should_submit=settings.submit_usage_analytics,
         )
         self.etherscan = Etherscan(database=self.data.db, msg_aggregator=self.msg_aggregator)
-        self.covalent = Covalent(database=self.data.db, msg_aggregator=self.msg_aggregator)
+        self.covalent = Covalent()
         self.beaconchain = BeaconChain(database=self.data.db, msg_aggregator=self.msg_aggregator)
         eth_rpc_endpoint = settings.eth_rpc_endpoint
         # Initialize the price historian singleton

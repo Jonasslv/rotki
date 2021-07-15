@@ -29,7 +29,7 @@ class BlockchainAccounts(NamedTuple):
     eth: List[ChecksumEthAddress]
     btc: List[BTCAddress]
     ksm: List[KusamaAddress]
-
+    avax:  List[ChecksumEthAddress]
     def get(self, blockchain: SupportedBlockchain) -> ListOfBlockchainAddresses:
         if blockchain == SupportedBlockchain.BITCOIN:
             return self.btc
@@ -37,6 +37,8 @@ class BlockchainAccounts(NamedTuple):
             return self.eth
         if blockchain == SupportedBlockchain.KUSAMA:
             return self.ksm
+        if blockchain == SupportedBlockchain.AVALANCHE:
+            return self.avax
         raise AssertionError(f'Unsupported blockchain: {blockchain}')
 
 
@@ -158,5 +160,6 @@ def is_valid_db_blockchain_account(
         return is_checksum_address(account)
     if blockchain == SupportedBlockchain.KUSAMA.value:
         return is_valid_kusama_address(account)
-
+    if blockchain == SupportedBlockchain.AVALANCHE.value:
+        return is_checksum_address(account)
     raise AssertionError(f'Unknown blockchain: {blockchain}')

@@ -102,7 +102,7 @@ class AvalancheManager():
     def get_latest_block_number(self) -> int:
             return self.w3.eth.block_number
 
-    def get_eth_balance(self, account: ChecksumEthAddress) -> FVal:
+    def get_avax_balance(self, account: ChecksumEthAddress) -> FVal:
         """Gets the balance of the given account in ETH
 
         May raise:
@@ -112,13 +112,14 @@ class AvalancheManager():
         result = self.covalent.get_token_balances_address(account)
         if result is False:
             balance = from_wei(self.w3.eth.get_balance(account))
-            return balance
+            return FVal(balance)
         else:
             def filter_avax(value):
                 return value['contract_address'] == '0x9debca6ea3af87bf422cea9ac955618ceb56efb4'
             
             avax_coin = list(filter(filter_avax, result))
-            return float(avax_coin[0]['quote'])/float(avax_coin[0]['quote_rate']) if float(avax_coin[0]['quote_rate']) != 0 else 0
+            balance = from_wei(FVal(avax_coin[0]['balance']))
+            return FVal(balance)
 
     def get_multieth_balance(
             self,
@@ -132,7 +133,7 @@ class AvalancheManager():
         """
         balances = dict()
         for account in accounts:
-            balances[account] = self.get_eth_balance(account)
+            balances[account] = self.get_avax_balance(account)
         return balances
 
     def get_block_by_number(self, num: int) -> Dict[str, Any]:
@@ -241,7 +242,7 @@ class AvalancheManager():
         if it is provided in the contract. This method may raise:
         - BadFunctionCallOutput: If there is an error calling a bad address
         """
-        properties = ('decimals', 'symbol', 'name')
+        properties = ('decimals', 'symbol', 'name', 'derivedETH')
         info: Dict[str, Any] = {}
         try:
                         # Output contains call status and result
@@ -251,6 +252,7 @@ class AvalancheManager():
                     symbol
                     name
                     decimals
+                    derivedETH
                     }}
                 }}
                 '''
@@ -261,5 +263,5 @@ class AvalancheManager():
         except:
             # If something happens in the connection the output should have
             # the same length as the tuple of properties
-            return {'decimals': None, 'symbol': None , 'name': None}
+            return {'decimals': None, 'symbol': None , 'name': None, 'derivedETH': None}
         return info

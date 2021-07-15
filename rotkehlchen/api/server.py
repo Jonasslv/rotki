@@ -97,7 +97,7 @@ from rotkehlchen.api.v1.resources import (
     YearnVaultsHistoryResource,
     create_blueprint,
     AvalancheTransactionsResource,
-    testeResource,
+    ERC20TokenInfoAVAX,
 )
 from rotkehlchen.logging import RotkehlchenLogsAdapter
 
@@ -207,6 +207,7 @@ URLS_V1: URLS = [
     ('/ping', PingResource),
     ('/import', DataImportResource),
     ('/blockchains/AVAX/transactions', AvalancheTransactionsResource),
+    ('/blockchains/AVAX/erc20details/', ERC20TokenInfoAVAX),
 ]
 
 logger = logging.getLogger(__name__)

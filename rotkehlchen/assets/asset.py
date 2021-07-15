@@ -8,6 +8,10 @@ from rotkehlchen.constants.resolver import (
     ETHEREUM_DIRECTIVE_LENGTH,
     ethaddress_to_identifier,
     strethaddress_to_identifier,
+    AVALANCHE_DIRECTIVE,
+    AVALANCHE_DIRECTIVE_LENGTH,
+    avaxaddress_to_identifier,
+    stravaxaddress_to_identifier
 )
 from rotkehlchen.errors import DeserializationError, UnknownAsset, UnsupportedAsset
 from rotkehlchen.fval import FVal
@@ -436,11 +440,19 @@ class Asset():
     def is_eth_token(self) -> bool:
         return self.asset_type == AssetType.ETHEREUM_TOKEN
 
+    def is_avax_token(self) -> bool:
+        return self.asset_type == AssetType.AVALANCHE_TOKEN
+    
     def __str__(self) -> str:
         if self.is_eth_token():
             token = EthereumToken.from_asset(self)
             assert token, 'Token should exist here'
             return str(token)
+        if self.is_avax_token():
+            token = AvalancheToken.from_asset(self)
+            assert token, 'Token should exist here'
+            return str(token)
+        
         return f'{self.symbol}({self.name})'
 
     def __repr__(self) -> str:
@@ -666,5 +678,154 @@ class EthereumToken(HasEthereumToken):
 
         try:
             return cls(identifier[ETHEREUM_DIRECTIVE_LENGTH:])
+        except DeserializationError:
+            return None
+
+# Create a generic variable that can be 'HasEthereumToken', or any subclass.
+avax_Y = TypeVar('avax_Y', bound='HasAvalancheToken')
+
+
+@dataclass(init=True, repr=True, eq=False, order=False, unsafe_hash=False, frozen=True)
+class HasAvalancheToken(Asset):
+    """ Marker to denote assets having an Avalanche token address """
+    avalanche_address: ChecksumEthAddress = field(init=False)
+    decimals: int = field(init=False)
+    protocol: str = field(init=False)
+    underlying_tokens: List[UnderlyingToken] = field(init=False)
+
+    def __post_init__(
+            self,
+            form_with_incomplete_data: bool = False,
+            direct_field_initialization: bool = False,
+    ) -> None:
+        if direct_field_initialization:
+            return
+
+        object.__setattr__(self, 'identifier', AVALANCHE_DIRECTIVE + self.identifier)
+        # TODO: figure out a way to move this out. Moved in here due to cyclic imports
+        #from rotkehlchen.globaldb import GlobalDBHandler  # isort:skip  # noqa: E501  # pylint: disable=import-outside-toplevel
+        from rotkehlchen.assets.resolver import AssetResolver  # isort:skip  # noqa: E501  # pylint: disable=import-outside-toplevel
+        from rotkehlchen.globaldb import GlobalDBHandler 
+        data = AssetResolver().get_asset_data(self.identifier) #AssetResolver().get_asset_data(self.identifier)  # pylint: disable=no-member
+        if not data.avalanche_address:
+            raise DeserializationError(
+                'Tried to initialize a non Ethereum asset as Ethereum Token',
+            )
+        # Ugly hack to set attributes of a frozen data class as post init
+        # https://docs.python.org/3/library/dataclasses.html#frozen-instances
+        object.__setattr__(self, 'name', data.name)
+        object.__setattr__(self, 'symbol', data.symbol)
+        object.__setattr__(self, 'asset_type', data.asset_type)
+        object.__setattr__(self, 'started', data.started)
+        forked = None
+        object.__setattr__(self, 'forked', forked)
+        swapped_for = None
+        object.__setattr__(self, 'swapped_for', swapped_for)
+        object.__setattr__(self, 'cryptocompare', None)
+        object.__setattr__(self, 'coingecko', data.coingecko)
+        object.__setattr__(self, 'avalanche_address', data.avalanche_address)
+        object.__setattr__(self, 'decimals', data.decimals)
+        object.__setattr__(self, 'protocol', None)
+
+        #TODO PARA LP TOKENS
+        # underlying_tokens = GlobalDBHandler().fetch_underlying_tokens(data.avalanche_address)
+        object.__setattr__(self, 'underlying_tokens', list())
+
+    def serialize_all_info(self) -> Dict[str, Any]:
+        underlying_tokens = [x.serialize() for x in self.underlying_tokens] if self.underlying_tokens is not None else None  # noqa: E501
+        return {
+            'identifier': self.identifier,
+            'address': self.avalanche_address,
+            'decimals': self.decimals,
+            'name': self.name,
+            'symbol': self.symbol,
+            'started': self.started,
+            'swapped_for': self.swapped_for.identifier if self.swapped_for else None,
+            'coingecko': self.coingecko,
+            'cryptocompare': self.cryptocompare,
+            'protocol': self.protocol,
+            'underlying_tokens': underlying_tokens,
+        }
+
+    @classmethod
+    def initialize(
+            cls: Type[avax_Y],
+            address: ChecksumEthAddress,
+            decimals: Optional[int] = None,
+            name: Optional[str] = None,
+            symbol: Optional[str] = None,
+            started: Optional[Timestamp] = None,
+            swapped_for: Optional[Asset] = None,
+            coingecko: Optional[str] = None,
+            # add the token with inactive cryptocompare so querying is not attempted by symbol
+            cryptocompare: Optional[str] = '',
+            protocol: Optional[str] = None,
+            underlying_tokens: Optional[List[UnderlyingToken]] = None,
+    ) -> avax_Y:
+        """Initialize a token from fields"""
+        token = cls('whatever', direct_field_initialization=True)
+        object.__setattr__(token, 'identifier', avaxaddress_to_identifier(address))
+        object.__setattr__(token, 'name', name)
+        object.__setattr__(token, 'symbol', symbol)
+        object.__setattr__(token, 'asset_type', AssetType.AVALANCHE_TOKEN)
+        object.__setattr__(token, 'started', started)
+        object.__setattr__(token, 'forked', None)
+        object.__setattr__(token, 'swapped_for', swapped_for)
+        object.__setattr__(token, 'cryptocompare', cryptocompare)
+        object.__setattr__(token, 'coingecko', coingecko)
+        object.__setattr__(token, 'avalanche_address', address)
+        object.__setattr__(token, 'decimals', decimals)
+        object.__setattr__(token, 'protocol', protocol)
+        object.__setattr__(token, 'underlying_tokens', underlying_tokens)
+        return token
+
+    @classmethod
+    def deserialize_from_db(
+            cls: Type[avax_Y],
+            entry: EthereumTokenDBTuple,
+            underlying_tokens: Optional[List[UnderlyingToken]] = None,
+    ) -> avax_Y:
+        """May raise UnknownAsset if the swapped for asset can't be recognized
+
+        That error would be bad because it would mean somehow an unknown id made it into the DB
+        """
+        swapped_for = Asset(entry[6]) if entry[6] is not None else None
+        return cls.initialize(
+            address=entry[1],  # type: ignore
+            decimals=entry[2],
+            name=entry[3],
+            symbol=entry[4],
+            started=Timestamp(entry[5]),  # type: ignore
+            swapped_for=swapped_for,
+            coingecko=entry[7],
+            cryptocompare=entry[8],
+            protocol=entry[9],
+            underlying_tokens=underlying_tokens,
+        )
+
+
+# Create a generic variable that can be 'EthereumToken', or any subclass.
+avax_T = TypeVar('avax_T', bound='AvalancheToken')
+
+
+@dataclass(init=True, repr=True, eq=False, order=False, unsafe_hash=False, frozen=True)
+class AvalancheToken(HasAvalancheToken):
+
+    def __str__(self) -> str:
+        return f'{self.symbol}({self.avalanche_address})'
+
+    @classmethod
+    def from_asset(cls: Type[avax_T], asset: Asset) -> Optional[T]:
+        """Attempts to turn an asset into an EthereumToken. If it fails returns None"""
+        return cls.from_identifier(asset.identifier)
+
+    @classmethod
+    def from_identifier(cls: Type[avax_T], identifier: str) -> Optional[T]:
+        """Attempts to turn an asset into an EthereumToken. If it fails returns None"""
+        if not identifier.startswith(AVALANCHE_DIRECTIVE):
+            return None
+
+        try:
+            return cls(identifier[AVALANCHE_DIRECTIVE_LENGTH:])
         except DeserializationError:
             return None
