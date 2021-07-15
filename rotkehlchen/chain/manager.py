@@ -576,7 +576,7 @@ class ChainManager(CacheableMixIn, LockableQueryMixIn):
             self.balances.avax[account] = BalanceSheet(
                 assets=defaultdict(Balance, {A_AVAX: Balance(amount, usd_value)}),
             )
-        self.totals.assets[A_AVAX] = Balance(amount=avax_total, usd_value=avax_total * avax_total)
+        self.totals.assets[A_AVAX] = Balance(amount=avax_total, usd_value=avax_total * avax_usd_price)
 
         #self.query_defi_balances()
         #self.query_ethereum_tokens(force_token_detection)
@@ -782,18 +782,24 @@ class ChainManager(CacheableMixIn, LockableQueryMixIn):
         if append_or_remove not in ('append', 'remove'):
             raise AssertionError(f'Unexpected action: {append_or_remove}')
         if append_or_remove == 'remove' and account not in self.accounts.avax:
-            raise InputError('Tried to remove a non existing KSM account')
-
+            raise InputError('Tried to remove a non existing AVAX account')
+        
         avax_usd_price = Inquirer().find_usd_price(A_AVAX)
-        if append_or_remove == 'append':
+        remove_with_populated_balance = (
+            append_or_remove == 'remove' and len(self.balances.avax) != 0
+        )
+        # Query the balance of the account except for the case when it's removed
+        # and there is no other account in the balances
+        if append_or_remove == 'append' or remove_with_populated_balance:
             amount = self.avalanche.get_avax_balance(account)
-            balance = Balance(amount=amount, usd_value=amount * avax_usd_price)
+            usd_value = amount * avax_usd_price
+
+        if append_or_remove == 'append':
             self.accounts.avax.append(account)
             self.balances.avax[account] = BalanceSheet(
-                assets=defaultdict(Balance, {A_AVAX: balance}),
+                assets=defaultdict(Balance, {A_AVAX: Balance(amount, usd_value)}),
             )
-            self.totals.assets[A_AVAX] += balance
-        if append_or_remove == 'remove':
+        elif append_or_remove == 'remove':
             if len(self.balances.avax) > 1:
                 if account in self.balances.avax:
                     self.totals.assets[A_AVAX] -= self.balances.avax[account].assets[A_AVAX]
@@ -801,6 +807,13 @@ class ChainManager(CacheableMixIn, LockableQueryMixIn):
                 self.totals.assets[A_AVAX] = Balance()
             self.balances.avax.pop(account, None)
             self.accounts.avax.remove(account)
+            
+        if len(self.balances.avax) == 0:
+            # If the last account was removed balance should be 0
+            self.totals.assets[A_AVAX] = Balance()
+        elif append_or_remove == 'append':
+            self.totals.assets[A_AVAX] += Balance(amount, usd_value)
+            
 
     def add_blockchain_accounts(
             self,
