@@ -34,6 +34,7 @@ import {
   ExchangeInfo,
   GeneralAccount,
   KSM,
+  AVAX,
   L2_LOOPRING
 } from '@/typing/types';
 import { assert } from '@/utils/assertions';
@@ -45,6 +46,7 @@ export interface BalanceGetters {
   ethAccounts: BlockchainAccountWithBalance[];
   btcAccounts: BlockchainAccountWithBalance[];
   kusamaBalances: BlockchainAccountWithBalance[];
+  avalancheBalances: BlockchainAccountWithBalance[];
   totals: AssetBalance[];
   exchangeRate: ExchangeRateGetter;
   exchanges: ExchangeInfo[];
@@ -114,6 +116,9 @@ export const getters: Getters<
   },
   kusamaBalances: ({ ksmAccounts, ksm }) => {
     return balances(ksmAccounts, ksm, KSM);
+  },
+  avalancheBalances: ({ avaxAccounts, avax }) => {
+    return balances(avaxAccounts, avax, AVAX);
   },
   btcAccounts({
     btc,
@@ -358,6 +363,7 @@ export const getters: Getters<
     const btcAccounts: BlockchainAccountWithBalance[] = getters.btcAccounts;
     const kusamaBalances: BlockchainAccountWithBalance[] =
       getters.kusamaBalances;
+    const avalancheAccounts: BlockchainAccountWithBalance[] = getters.avalancheBalances;
     const loopring: AccountAssetBalances = state.loopringBalances;
 
     if (ethAccounts.length > 0) {
@@ -417,6 +423,17 @@ export const getters: Getters<
         loading: ksmStatus === Status.NONE || ksmStatus === Status.LOADING
       });
     }
+
+    if (avalancheAccounts.length > 0) {
+      const avaxStatus = status(Section.BLOCKCHAIN_AVAX);
+      totals.push({
+        chain: AVAX,
+        l2: [],
+        usdValue: sum(avalancheAccounts),
+        loading: avaxStatus === Status.NONE || avaxStatus === Status.LOADING
+      });
+    }
+
 
     return totals.sort((a, b) => b.usdValue.minus(a.usdValue).toNumber());
   },
@@ -482,11 +499,12 @@ export const getters: Getters<
 
   accounts: (
     _,
-    { ethAccounts, btcAccounts, kusamaBalances }
+    { ethAccounts, btcAccounts, kusamaBalances, avalancheBalances }
   ): GeneralAccount[] => {
     return ethAccounts
       .concat(btcAccounts)
       .concat(kusamaBalances)
+      .concat(avalancheBalances)
       .filter((account: BlockchainAccountWithBalance) => !!account.address)
       .map((account: BlockchainAccountWithBalance) => ({
         chain: account.chain,

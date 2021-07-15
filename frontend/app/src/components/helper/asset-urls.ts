@@ -27,5 +27,9 @@ export const explorerUrls: AssetExplorerUrls = {
   KSM: {
     address: 'https://polkascan.io/kusama/account/',
     transaction: 'https://polkascan.io/kusama/transaction/'
+  },
+  AVAX:{
+    address: 'https://cchain.explorer.avax.network/address/',
+    transaction: 'https://cchain.explorer.avax.network/tx/'
   }
 };

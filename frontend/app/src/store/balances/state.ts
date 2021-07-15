@@ -7,6 +7,7 @@ export const defaultState = (): BalanceState => ({
     standalone: {},
     xpubs: []
   },
+  avax: {},
   totals: {},
   liabilities: {},
   usdToFiatExchangeRates: {},
@@ -18,6 +19,7 @@ export const defaultState = (): BalanceState => ({
     standalone: [],
     xpubs: []
   },
+  avaxAccounts: [],
   supportedAssets: [],
   manualBalances: [],
   manualBalanceByLocation: {},
