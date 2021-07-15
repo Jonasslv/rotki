@@ -88,12 +88,9 @@ def convert_transaction_from_covalent(
         ) from e
 
 
-class Covalent(ExternalServiceWithApiKey):
-    def __init__(self, database: DBHandler, msg_aggregator: MessagesAggregator) -> None:
-        super().__init__(database=database, service_name=ExternalService.COVALENT)
-        self.msg_aggregator = msg_aggregator
+class Covalent():
+    def __init__(self) -> None:
         self.session = requests.session()
-        self.warning_given = False
         self.session.headers.update({'User-Agent': 'rotkehlchen'})
 
     def _query(
