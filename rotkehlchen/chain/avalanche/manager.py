@@ -24,7 +24,6 @@ from web3.types import FilterParams
 
 from rotkehlchen.chain.avalanche.contracts import EthereumContract
 from rotkehlchen.chain.avalanche.graph import Graph
-from rotkehlchen.chain.avalanche.transactions import EthTransactions
 from rotkehlchen.db.dbhandler import DBHandler
 from rotkehlchen.errors import (
     BlockchainQueryError,
@@ -89,12 +88,6 @@ class AvalancheManager():
         )
         self.covalent = covalent
         self.msg_aggregator = msg_aggregator
-        #TODO: MUDA PARA O BANCO DA AVAX (quando criar)
-        self.transactions = EthTransactions(
-            database=database,
-            covalent=covalent,
-            msg_aggregator=msg_aggregator,
-        )
         
     def connected_to_any_web3(self) -> bool:
         return self.w3.isConnected()
