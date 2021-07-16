@@ -568,7 +568,7 @@ class ChainManager(CacheableMixIn, LockableQueryMixIn):
         
         #Query avax balance
         avax_usd_price = Inquirer().find_usd_price(A_AVAX)
-        account_amount = self.avalanche.get_multieth_balance(self.accounts.avax)
+        account_amount = self.avalanche.get_multiavax_balance(self.accounts.avax)
         avax_total = FVal(0)
         for account, amount in account_amount.items():
             avax_total += amount
@@ -576,11 +576,9 @@ class ChainManager(CacheableMixIn, LockableQueryMixIn):
             self.balances.avax[account] = BalanceSheet(
                 assets=defaultdict(Balance, {A_AVAX: Balance(amount, usd_value)}),
             )
+            
         self.totals.assets[A_AVAX] = Balance(amount=avax_total, usd_value=avax_total * avax_usd_price)
-
-        #self.query_defi_balances()
-        #self.query_ethereum_tokens(force_token_detection)
-        #self._add_protocol_balances()
+        #self.query_avalanche_tokens(force_token_detection)
 
     def sync_btc_accounts_with_db(self) -> None:
         """Call this function after having deleted BTC accounts from the DB to
@@ -799,6 +797,7 @@ class ChainManager(CacheableMixIn, LockableQueryMixIn):
             self.balances.avax[account] = BalanceSheet(
                 assets=defaultdict(Balance, {A_AVAX: Balance(amount, usd_value)}),
             )
+                
         elif append_or_remove == 'remove':
             if len(self.balances.avax) > 1:
                 if account in self.balances.avax:
@@ -813,7 +812,6 @@ class ChainManager(CacheableMixIn, LockableQueryMixIn):
             self.totals.assets[A_AVAX] = Balance()
         elif append_or_remove == 'append':
             self.totals.assets[A_AVAX] += Balance(amount, usd_value)
-            
 
     def add_blockchain_accounts(
             self,

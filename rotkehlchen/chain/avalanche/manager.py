@@ -114,7 +114,7 @@ class AvalancheManager():
             balance = from_wei(FVal(avax_coin[0]['balance']))
             return FVal(balance)
 
-    def get_multieth_balance(
+    def get_multiavax_balance(
             self,
             accounts: List[ChecksumEthAddress],
     ) -> Dict[ChecksumEthAddress, FVal]:
@@ -128,6 +128,7 @@ class AvalancheManager():
         for account in accounts:
             balances[account] = self.get_avax_balance(account)
         return balances
+
 
     def get_block_by_number(self, num: int) -> Dict[str, Any]:
         """Returns the block object corresponding to the given block number
