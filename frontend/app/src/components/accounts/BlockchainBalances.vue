@@ -58,11 +58,11 @@
     />
 
     <account-balances
-      v-if="avalancheBalances.length > 0"
+      v-if="avaxAccounts.length > 0"
       class="mt-8"
       :title="$t('blockchain_balances.balances.avax')"
       blockchain="AVAX"
-      :balances="avalancheBalances"
+      :balances="avaxAccounts"
       @edit-account="edit($event)"
     />
   </v-container>
@@ -98,7 +98,7 @@ import {
       'btcAccounts',
       'blockchainAssets',
       'kusamaBalances',
-      'avalancheBalances'
+      'avaxAccounts'
     ])
   }
 })
@@ -106,7 +106,7 @@ export default class BlockchainBalances extends Vue {
   ethAccounts!: AccountWithBalance[];
   btcAccounts!: BlockchainAccountWithBalance[];
   kusamaBalances!: AccountWithBalance[];
-  avalancheBalances!: AccountWithBalance[];
+  avaxAccounts!: AccountWithBalance[];
   blockchainAssets!: AssetBalance[];
 
   accountToEdit: BlockchainAccountWithBalance | null = null;

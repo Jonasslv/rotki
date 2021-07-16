@@ -368,7 +368,7 @@ export const actions: ActionTree<BalanceState, RotkehlchenState> = {
     payload: { chain?: Blockchain; balances: BlockchainBalances }
   ): Promise<void> {
     const { perAccount, totals } = payload.balances;
-    const { ETH: ethBalances, BTC: btcBalances, KSM: ksmBalances } = perAccount;
+    const { ETH: ethBalances, BTC: btcBalances, KSM: ksmBalances, AVAX: avaxBalances} = perAccount;
     const chain = payload.chain;
 
     if (!chain || chain === ETH) {
@@ -381,6 +381,10 @@ export const actions: ActionTree<BalanceState, RotkehlchenState> = {
 
     if (!chain || chain === BTC) {
       commit('updateBtc', btcBalances ?? {});
+    }
+
+    if (!chain || chain ===  AVAX) {
+      commit('updateAvax', avaxBalances ?? {});
     }
 
     commit('updateTotals', totals.assets);
@@ -628,7 +632,7 @@ export const actions: ActionTree<BalanceState, RotkehlchenState> = {
         commit('ethAccounts', accountData);
       } else if (blockchain === KSM) {
         commit('ksmAccounts', accountData);
-      }else{
+      } else {
         commit('avaxAccounts', accountData);
       }
     } else {
@@ -663,6 +667,7 @@ export const actions: ActionTree<BalanceState, RotkehlchenState> = {
   async removeTag({ commit, state }, tagName: string) {
     commit('ethAccounts', removeTags(state.ethAccounts, tagName));
     commit('ksmAccounts', removeTags(state.ksmAccounts, tagName));
+    commit('avaxAccounts', removeTags(state.avaxAccounts, tagName));
     const btcAccounts = state.btcAccounts;
     const standalone = removeTags(btcAccounts.standalone, tagName);
 

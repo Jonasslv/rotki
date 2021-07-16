@@ -46,7 +46,7 @@ export interface BalanceGetters {
   ethAccounts: BlockchainAccountWithBalance[];
   btcAccounts: BlockchainAccountWithBalance[];
   kusamaBalances: BlockchainAccountWithBalance[];
-  avalancheBalances: BlockchainAccountWithBalance[];
+  avaxAccounts: BlockchainAccountWithBalance[];
   totals: AssetBalance[];
   exchangeRate: ExchangeRateGetter;
   exchanges: ExchangeInfo[];
@@ -117,7 +117,7 @@ export const getters: Getters<
   kusamaBalances: ({ ksmAccounts, ksm }) => {
     return balances(ksmAccounts, ksm, KSM);
   },
-  avalancheBalances: ({ avaxAccounts, avax }) => {
+  avaxAccounts: ({avaxAccounts, avax}:BalanceState): BlockchainAccountWithBalance[]  => {
     return balances(avaxAccounts, avax, AVAX);
   },
   btcAccounts({
@@ -363,7 +363,7 @@ export const getters: Getters<
     const btcAccounts: BlockchainAccountWithBalance[] = getters.btcAccounts;
     const kusamaBalances: BlockchainAccountWithBalance[] =
       getters.kusamaBalances;
-    const avalancheAccounts: BlockchainAccountWithBalance[] = getters.avalancheBalances;
+    const avaxAccounts: BlockchainAccountWithBalance[] = getters.avaxAccounts;
     const loopring: AccountAssetBalances = state.loopringBalances;
 
     if (ethAccounts.length > 0) {
@@ -424,12 +424,12 @@ export const getters: Getters<
       });
     }
 
-    if (avalancheAccounts.length > 0) {
+    if (avaxAccounts.length > 0) {
       const avaxStatus = status(Section.BLOCKCHAIN_AVAX);
       totals.push({
         chain: AVAX,
         l2: [],
-        usdValue: sum(avalancheAccounts),
+        usdValue: sum(avaxAccounts),
         loading: avaxStatus === Status.NONE || avaxStatus === Status.LOADING
       });
     }
@@ -499,12 +499,12 @@ export const getters: Getters<
 
   accounts: (
     _,
-    { ethAccounts, btcAccounts, kusamaBalances, avalancheBalances }
+    { ethAccounts, btcAccounts, kusamaBalances, avaxAccounts }
   ): GeneralAccount[] => {
     return ethAccounts
       .concat(btcAccounts)
       .concat(kusamaBalances)
-      .concat(avalancheBalances)
+      .concat(avaxAccounts)
       .filter((account: BlockchainAccountWithBalance) => !!account.address)
       .map((account: BlockchainAccountWithBalance) => ({
         chain: account.chain,
@@ -549,6 +549,7 @@ export const getters: Getters<
     eth,
     exchangeBalances,
     ksm,
+    avax,
     manualBalances,
     loopringBalances
   }) => asset => {
@@ -651,6 +652,19 @@ export const getters: Getters<
       breakdown.push({
         address,
         location: KSM,
+        balance: assetBalance
+      });
+    }
+
+    for (const address in avax) {
+      const balances = avax[address];
+      const assetBalance = balances.assets[asset];
+      if (!assetBalance) {
+        continue;
+      }
+      breakdown.push({
+        address,
+        location: AVAX,
         balance: assetBalance
       });
     }
